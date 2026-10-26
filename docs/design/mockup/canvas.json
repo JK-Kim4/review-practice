@@ -1,0 +1,20 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-26T04:00:00Z" },
+  "title": "감상 연습장 디자인 목업",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 1080, "title": "1. 홈", "expand": "fill" },
+    "Category.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 960, "title": "2. 무엇을 보고 왔나요", "expand": "fill", "is_interactive": true },
+    "Capture.dc.html": { "x": 2720, "y": 0, "w": 1280, "h": 1040, "title": "3-1. 작성 · 포착하기", "expand": "fill" },
+    "Question.dc.html": { "x": 4080, "y": 0, "w": 1280, "h": 1180, "title": "3-2. 작성 · 질문하기", "expand": "fill" },
+    "Compose.dc.html": { "x": 5440, "y": 0, "w": 1280, "h": 1180, "title": "3-3. 작성 · 정리하기", "expand": "fill" },
+    "Detail.dc.html": { "x": 6800, "y": 0, "w": 1280, "h": 1180, "title": "4. 감상 읽기", "expand": "fill" }
+  },
+  "order": ["Main.dc.html", "Category.dc.html", "Capture.dc.html", "Question.dc.html", "Compose.dc.html", "Detail.dc.html"],
+  "notes": {
+    "flow": { "x": 0, "y": -300, "text": "감상 남기기 흐름 — 홈 → 분류 선택 → 포착 · 질문 · 정리 → 읽기", "kind": "title1", "maxW": 8080 }
+  },
+  "designSystems": []
+}

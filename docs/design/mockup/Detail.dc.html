@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>감상 읽기</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#111113;text-decoration:none}a:hover{color:#2F4BE0}
+</style>
+</helmet>
+<div style="min-height: 1180px; background: #F6F6F4; color: #111113; font-family: 'IBM Plex Sans KR', system-ui, sans-serif; word-break: keep-all">
+  <header style="max-width: 960px; margin: 0 auto; padding: 28px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px">
+    <a href="Main.dc.html" aria-label="목록으로" style="width: 44px; height: 44px; border-radius: 999px; background: #FFFFFF; border: 1px solid #E6E6E2; display: inline-flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111113" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+    </a>
+    <div style="display: flex; gap: 8px">
+      <a href="Capture.dc.html" style="height: 44px; padding: 0 18px; border-radius: 999px; background: #FFFFFF; border: 1px solid #E6E6E2; font-size: 15px; display: inline-flex; align-items: center">수정</a>
+      <button type="button" style="height: 44px; padding: 0 18px; border-radius: 999px; background: #FFFFFF; border: 1px solid #E6E6E2; font: inherit; font-size: 15px; color: #111113; cursor: pointer">내보내기</button>
+    </div>
+  </header>
+
+  <article style="max-width: 680px; margin: 0 auto; padding: 24px 24px 120px">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap">
+      <span style="font-size: 12px; font-weight: 600; color: #4A4A50; padding: 2px 8px; border-radius: 6px; background: #EAEAE6">공연</span>
+      <span style="font-size: 14px; color: #66666C">2026. 10. 20 · 명동예술극장</span>
+    </div>
+    <p style="margin: 0 0 6px; font-size: 17px; font-weight: 600; color: #4A4A50">갈매기</p>
+    <h1 style="margin: 0 0 40px; font-size: 38px; line-height: 1.3; font-weight: 700; letter-spacing: -0.03em">니나가 떠난 뒤의 적막</h1>
+
+    <div style="font-size: 18px; line-height: 1.95; color: #1F1F22; display: flex; flex-direction: column; gap: 22px">
+      <p style="margin: 0">공연이 끝나고 가장 오래 남은 것은 니나가 떠난 뒤의 적막이었다.</p>
+      <p style="margin: 0">트레플레프와 니나의 마지막 대화에서 니나는 고통스러운 삶을 이야기하면서도 여전히 배우로 살아가겠다는 의지를 드러냈다. 그런데 나는 그 모습이 희망차기보다는 오히려 쓸쓸하게 느껴졌다.</p>
+      <p style="margin: 0">어쩌면 내가 생각하는 성장은 고통을 극복하는 일이었기 때문일 것이다. 하지만 니나는 고통이 사라지지 않더라도 자신의 삶을 계속 살아갈 수 있다는 것을 보여준 것 같았다.</p>
+      <p style="margin: 0">극장을 나서며 한 가지 질문이 남았다. 우리는 꼭 행복해져야만 자신의 삶을 잘 살아냈다고 말할 수 있을까?</p>
+    </div>
+
+    <section style="margin-top: 56px; padding: 28px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E6E6E2">
+      <h2 style="margin: 0 0 12px; font-size: 14px; font-weight: 600; color: {{accent}}">남은 질문</h2>
+      <p style="margin: 0; font-size: 20px; line-height: 1.6; font-weight: 600; letter-spacing: -0.01em">고통을 받아들인다는 것은 체념일까, 성숙일까?</p>
+    </section>
+
+    <details style="margin-top: 16px; padding: 20px 28px; border-radius: 20px; background: #EDEDEA">
+      <summary style="cursor: pointer; font-size: 15px; font-weight: 600; min-height: 24px">이 감상의 재료 보기 · 포착 2 · 질문 3</summary>
+      <ul style="margin: 16px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 15px; line-height: 1.6; color: #2E2E33">
+        <li>니나가 자신의 고통을 이야기하면서도 배우로 살아가겠다는 의지를 보였다.</li>
+        <li>니나가 떠난 뒤 트레플레프에게 남겨진 시간</li>
+        <li>불행을 말하면서도 삶을 포기하지 않는 모습이 모순적으로 느껴졌다.</li>
+      </ul>
+    </details>
+  </article>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#2F4BE0","options":["#2F4BE0","#111113","#C2410C","#0F766E"]},"$preview":{"width":1280,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#2F4BE0' };
+  }
+}
+</script>
+</body>
+</html>
