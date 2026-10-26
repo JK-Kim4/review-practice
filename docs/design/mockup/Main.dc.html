@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>감상 연습장 — 홈</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#111113;text-decoration:none}a:hover{color:#2F4BE0}
+</style>
+</helmet>
+<div style="min-height: 1080px; background: #F6F6F4; color: #111113; font-family: 'IBM Plex Sans KR', system-ui, sans-serif; word-break: keep-all">
+  <header style="max-width: 960px; margin: 0 auto; padding: 28px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px">
+    <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; letter-spacing: -0.01em">
+      <span style="width: 28px; height: 28px; border-radius: 8px; background: #111113; display: inline-flex; align-items: center; justify-content: center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"></path></svg>
+      </span>
+      감상 연습장
+    </a>
+    <span style="font-size: 14px; color: #66666C">기록 12편</span>
+  </header>
+
+  <main style="max-width: 960px; margin: 0 auto; padding: 24px 24px 96px">
+    <p style="margin: 0 0 10px; font-size: 15px; color: #66666C">10월 26일 월요일</p>
+    <h1 style="margin: 0 0 32px; font-size: 40px; line-height: 1.25; font-weight: 700; letter-spacing: -0.03em">오늘 본 것을<br>잊기 전에 남겨볼까요?</h1>
+
+    <a href="Category.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 32px 36px; border-radius: 24px; background: #111113; color: #FFFFFF; flex-wrap: wrap">
+      <span style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 26px; font-weight: 700; letter-spacing: -0.02em">감상 남기기</span>
+        <span style="font-size: 15px; color: #C9C9CE">질문을 따라 포착 · 질문 · 정리 세 단계로, 5분이면 충분해요</span>
+      </span>
+      <span style="width: 56px; height: 56px; border-radius: 999px; background: {{accent}}; display: inline-flex; align-items: center; justify-content: center; flex: none">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>
+      </span>
+    </a>
+
+    <a href="Capture.dc.html" style="margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 24px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E6E6E2; flex-wrap: wrap">
+      <span style="display: flex; align-items: center; gap: 12px; font-size: 15px">
+        <span style="width: 8px; height: 8px; border-radius: 999px; background: {{accent}}; flex: none"></span>
+        <span><strong style="font-weight: 600">갈매기</strong><span style="color: #66666C"> · 질문하기 단계에서 멈췄어요</span></span>
+      </span>
+      <span style="font-size: 15px; font-weight: 600; color: {{accent}}">이어 쓰기</span>
+    </a>
+
+    <section style="margin-top: 64px">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px">
+        <h2 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em">나의 감상</h2>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap">
+          <button type="button" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 0; background: #111113; color: #FFFFFF; font: inherit; font-size: 14px; font-weight: 500">전체</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid #E6E6E2; background: #FFFFFF; color: #111113; font: inherit; font-size: 14px">공연</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid #E6E6E2; background: #FFFFFF; color: #111113; font: inherit; font-size: 14px">전시</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid #E6E6E2; background: #FFFFFF; color: #111113; font: inherit; font-size: 14px">책</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid #E6E6E2; background: #FFFFFF; color: #111113; font: inherit; font-size: 14px">박람회 · 기타</button>
+        </div>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E6E6E2; border-radius: 20px; overflow: hidden">
+        <sc-for list="{{records}}" as="r" hint-placeholder-count="4">
+          <a href="Detail.dc.html" style="display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 20px; align-items: start; padding: 22px 24px; border-top: {{r.border}}">
+            <span style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2">{{r.day}}</span>
+              <span style="font-size: 13px; color: #66666C">{{r.month}}</span>
+            </span>
+            <span style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+              <span style="display: flex; align-items: center; gap: 8px">
+                <span style="font-size: 12px; font-weight: 600; color: #4A4A50; padding: 2px 8px; border-radius: 6px; background: #F0F0EC">{{r.type}}</span>
+                <span style="font-size: 17px; font-weight: 600">{{r.title}}</span>
+              </span>
+              <span style="font-size: 15px; line-height: 1.6; color: #4A4A50">{{r.excerpt}}</span>
+            </span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A8A90" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-top: 4px"><path d="M9 6l6 6-6 6"></path></svg>
+          </a>
+        </sc-for>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#2F4BE0","options":["#2F4BE0","#111113","#C2410C","#0F766E"]},"$preview":{"width":1280,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const records = [
+      { day: '20', month: '2026.10', type: '공연', title: '갈매기', excerpt: '공연이 끝나고 가장 오래 남은 것은 니나가 떠난 뒤의 적막이었다.' },
+      { day: '12', month: '2026.10', type: '전시', title: '[전시명]', excerpt: '한 작품 앞에 10분을 서 있었다. 처음엔 회색이라 생각했던 화면에 푸른 기가 돌았다.' },
+      { day: '03', month: '2026.10', type: '책', title: '해석에 반하여', excerpt: '작가의 의도를 맞혀야 한다는 부담을 내려놓으니, 내가 본 것이 조금 더 또렷해졌다.' },
+      { day: '21', month: '2026.09', type: '박람회', title: '[박람회명]', excerpt: '가장 오래 머문 곳은 작은 출판사 부스였다. 손으로 쓴 가격표가 기억에 남는다.' }
+    ];
+    return {
+      accent: this.props.accent ?? '#2F4BE0',
+      records: records.map((r, i) => ({ ...r, border: i === 0 ? '0' : '1px solid #EEEEEB' }))
+    };
+  }
+}
+</script>
+</body>
+</html>

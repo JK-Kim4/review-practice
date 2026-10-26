@@ -4,7 +4,8 @@
 
 const $app = document.getElementById('app');
 let META = null;
-let cleanup = null; // 페이지를 떠날 때 실행할 정리 함수 (자동 저장 마무리, 타이머 해제 등)
+let cleanup = null; // 페이지를 떠날 때 실행할 정리 함수 (자동 저장 마무리 등)
+let isDirty = () => false;
 
 function el(tag, attrs, ...kids) {
   const node = document.createElement(tag);
@@ -12,7 +13,7 @@ function el(tag, attrs, ...kids) {
     if (v === null || v === undefined || v === false) continue;
     if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
     else if (k === 'class') node.className = v;
-    else if (k === 'value' || k === 'checked' || k === 'selected') node[k] = v;
+    else if (k === 'value' || k === 'checked') node[k] = v;
     else node.setAttribute(k, v === true ? '' : v);
   }
   for (const kid of kids.flat(Infinity)) {
@@ -22,12 +23,29 @@ function el(tag, attrs, ...kids) {
   return node;
 }
 
+// 선 아이콘 (고정 문자열만 사용)
+const ICONS = {
+  pen: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/>',
+  arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+  close: '<path d="M18 6L6 18"/><path d="M6 6l12 12"/>',
+  back: '<path d="M15 6l-6 6 6 6"/>',
+  chevron: '<path d="M9 6l6 6-6 6"/>',
+  check: '<path d="M5 12l5 5L20 7"/>',
+  performance: '<path d="M3 5h18v4a3 3 0 0 0 0 6v4H3v-4a3 3 0 0 0 0-6V5z"/><path d="M14 5v14" stroke-dasharray="2 2"/>',
+  exhibition: '<rect x="3" y="4" width="18" height="14" rx="1"/><path d="M3 15l5-5 4 4 3-3 6 6"/><path d="M8 21h8"/>',
+  book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>',
+  fair: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+};
+
+function icon(name, size = 20, stroke = 'currentColor', width = 2) {
+  const span = document.createElement('span');
+  span.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+  return span.firstChild;
+}
+
 async function api(method, url, body) {
   const opts = { method, headers: {} };
-  if (body instanceof Blob) {
-    opts.body = body;
-    opts.headers['Content-Type'] = body.type;
-  } else if (body !== undefined) {
+  if (body !== undefined) {
     opts.body = JSON.stringify(body);
     opts.headers['Content-Type'] = 'application/json';
   }
@@ -43,65 +61,57 @@ function toast(msg) {
   t.textContent = msg;
   t.hidden = false;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { t.hidden = true; }, 2200);
+  toast.timer = setTimeout(() => { t.hidden = true; }, 2400);
 }
 
-function ymd(d) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dotted = (date) => (date ? date.replace(/-/g, '. ') : '');
+
+function category(id) {
+  return META.CATEGORIES.find((c) => c.id === id) || META.CATEGORIES[META.CATEGORIES.length - 1];
 }
 
-function shortDate(iso) {
-  return iso ? iso.slice(0, 10) : '';
+function stageLabel(id) {
+  return (META.STAGES.find((s) => s.id === id) || META.STAGES[0]).label;
 }
 
-function hhmm() {
-  return new Date().toTimeString().slice(0, 5);
+function vagueWord(text) {
+  return META.VAGUE_WORDS.find((w) => text.includes(w)) || null;
 }
 
-function mondayOf(d) {
-  const m = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  m.setDate(m.getDate() - ((m.getDay() + 6) % 7));
-  return m;
+function body(review) {
+  return META.COMPOSE_SECTIONS.map((s) => review.compose[s.key].trim()).filter(Boolean).join('\n\n');
 }
 
-function typeLabel(type) {
-  return (META.workTypes.find((t) => t.id === type) || { label: '기타' }).label;
+function autoGrow(textarea) {
+  const fit = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
+  textarea.addEventListener('input', fit);
+  requestAnimationFrame(fit);
+  return textarea;
 }
 
-function exerciseById(id) {
-  return META.exercises.find((e) => e.id === id);
+function textArea(value, attrs = {}) {
+  return autoGrow(el('textarea', { class: 'text', rows: 2, value, ...attrs }));
 }
 
-function vagueHits(text) {
-  return META.vagueWords.filter((w) => text.includes(w));
+// 막연한 표현을 쓰면 한 걸음 더 구체적으로 적도록 안내한다.
+function nudgeFor(textarea) {
+  const box = el('div', { class: 'nudge', hidden: true });
+  const update = () => {
+    const w = vagueWord(textarea.value);
+    box.hidden = !w;
+    if (w) box.textContent = `‘${w}’에서 한 걸음만 더. 무엇이, 어느 부분이 그랬나요?`;
+  };
+  textarea.addEventListener('input', update);
+  update();
+  return box;
 }
 
-function sentenceCount(text) {
-  return text.split(/[.!?。…]+["'”’)\]]*\s*|\n+/).filter((s) => s.trim()).length;
-}
-
-function charCount(text) {
-  return { withSpace: text.replace(/\n/g, '').length, noSpace: text.replace(/\s/g, '').length };
-}
-
-function preview(text, n = 80) {
-  const t = (text || '').replace(/\s+/g, ' ').trim();
-  return t.length > n ? t.slice(0, n) + '…' : t;
-}
-
-function noteSummary(note) {
-  const ex = exerciseById(note.exercise);
-  if (!ex) return '';
-  const first = ex.fields.map((f) => note.answers[f.key]).find((v) => v && v.trim());
-  return preview(first || '(비어 있음)');
-}
-
-function essayBody(essay) {
-  return META.essaySections.map((s) => (essay.sections?.[s.key] || '').trim()).filter(Boolean).join('\n\n');
-}
-
-// 입력이 멈추면 저장하고, 저장 상태를 표시한다.
+// 입력이 멈추면 저장하고 상태를 표시한다.
 function autosaver(save, statusEl) {
   let timer = null;
   let dirty = false;
@@ -111,10 +121,10 @@ function autosaver(save, statusEl) {
     if (!dirty) return chain;
     dirty = false;
     statusEl.textContent = '저장 중…';
-    statusEl.className = 'status';
+    statusEl.classList.remove('error');
     chain = chain.then(save).then(
-      () => { statusEl.textContent = `저장됨 ${hhmm()}`; statusEl.className = 'status ok'; },
-      (err) => { dirty = true; statusEl.textContent = `저장 실패: ${err.message}`; statusEl.className = 'status'; },
+      () => { if (!dirty) statusEl.textContent = '저장됨'; },
+      (err) => { dirty = true; statusEl.textContent = '저장 실패'; statusEl.classList.add('error'); toast(err.message); },
     );
     return chain;
   }
@@ -122,101 +132,31 @@ function autosaver(save, statusEl) {
     touch() {
       dirty = true;
       statusEl.textContent = '입력 중…';
-      statusEl.className = 'status';
       clearTimeout(timer);
-      timer = setTimeout(flush, 800);
+      timer = setTimeout(flush, 700);
     },
     flush,
     get dirty() { return dirty; },
   };
 }
 
-function vagueBox(textarea) {
-  const box = el('div', { class: 'vague', hidden: true });
-  const update = () => {
-    const hits = vagueHits(textarea.value);
-    box.hidden = !hits.length;
-    box.textContent = hits.length
-      ? `“${hits.join('”, “')}” — 무엇이, 어느 장면의 무엇이 그랬나요? 한 걸음만 더 구체적으로 적어보세요.`
-      : '';
-  };
-  textarea.addEventListener('input', update);
-  update();
-  return box;
-}
-
-function autoGrow(textarea) {
-  const fit = () => {
-    textarea.style.height = 'auto';
-    textarea.style.height = `${textarea.scrollHeight + 2}px`;
-  };
-  textarea.addEventListener('input', fit);
-  requestAnimationFrame(fit);
-  return textarea;
-}
-
-function insertText(textarea, text) {
-  textarea.value = textarea.value.trim() ? `${textarea.value.trimEnd()}\n${text}` : text;
-  textarea.dispatchEvent(new Event('input'));
-  textarea.focus();
-}
-
-function timerWidget(minutes) {
-  const label = el('span', { class: 'timer muted small' });
-  let left = 0;
-  let iv = null;
-  const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  const btn = el('button', {
-    class: 'btn small',
-    type: 'button',
-    onclick: () => {
-      if (iv) { clearInterval(iv); iv = null; btn.textContent = `${minutes}분 타이머`; label.textContent = ''; return; }
-      left = minutes * 60;
-      label.textContent = fmt(left);
-      btn.textContent = '타이머 끄기';
-      iv = setInterval(() => {
-        left -= 1;
-        label.textContent = left > 0 ? fmt(left) : '시간 끝! 마무리해 보세요.';
-        if (left <= 0) { clearInterval(iv); iv = null; btn.textContent = `${minutes}분 타이머`; }
-      }, 1000);
-    },
-  }, `${minutes}분 타이머`);
-  return { node: el('span', { class: 'row' }, btn, label), stop: () => clearInterval(iv) };
-}
-
 // ---------- 라우터 ----------
 
 const routes = [
   [/^\/?$/, renderHome],
-  [/^\/works$/, renderWorks],
-  [/^\/works\/new$/, () => renderWorkForm(null)],
-  [/^\/w\/([a-z0-9]+)$/, (m) => renderWork(m[1])],
-  [/^\/w\/([a-z0-9]+)\/edit$/, (m) => renderWorkForm(m[1])],
-  [/^\/w\/([a-z0-9]+)\/practice\/([a-z-]+)$/, (m) => renderNote(m[1], m[2], null)],
-  [/^\/w\/([a-z0-9]+)\/note\/([a-z0-9]+)$/, (m) => renderNote(m[1], null, m[2])],
-  [/^\/w\/([a-z0-9]+)\/essay\/new$/, (m) => renderEssay(m[1], null)],
-  [/^\/w\/([a-z0-9]+)\/essay\/([a-z0-9]+)$/, (m) => renderEssay(m[1], m[2])],
-  [/^\/practice$/, renderPractice],
-  [/^\/questions$/, renderQuestions],
-  [/^\/guide$/, renderGuide],
+  [/^\/new$/, renderNew],
+  [/^\/r\/([a-f0-9]{12})$/, (m) => renderDetail(m[1])],
+  [/^\/r\/([a-f0-9]{12})\/(capture|question|compose)$/, (m) => renderWrite(m[1], m[2])],
 ];
-
-function currentQuery() {
-  const q = location.hash.split('?')[1] || '';
-  return new URLSearchParams(q);
-}
 
 async function route() {
   if (cleanup) {
     const fn = cleanup;
     cleanup = null;
+    isDirty = () => false;
     await Promise.resolve(fn()).catch(() => {});
   }
-  const path = location.hash.replace(/^#/, '').split('?')[0];
-  const top = path.split('/')[1] || 'home';
-  const navKey = { w: 'works', works: 'works' }[top] || top;
-  document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === navKey));
-
+  const path = location.hash.replace(/^#/, '');
   for (const [re, fn] of routes) {
     const m = path.match(re);
     if (!m) continue;
@@ -225,630 +165,404 @@ async function route() {
       $app.replaceChildren(node);
       window.scrollTo(0, 0);
     } catch (err) {
-      $app.replaceChildren(el('div', { class: 'card' }, el('p', {}, err.message), el('a', { href: '#/' }, '처음으로')));
+      $app.replaceChildren(el('div', { class: 'narrow' },
+        el('h1', { class: 'page-title' }, '찾을 수 없어요'),
+        el('p', { class: 'page-desc' }, err.message),
+        el('a', { class: 'btn-primary', href: '#/' }, '홈으로')));
     }
     return;
   }
-  $app.replaceChildren(el('p', {}, '페이지를 찾을 수 없습니다. ', el('a', { href: '#/' }, '처음으로')));
+  location.replace('#/');
 }
 
 window.addEventListener('hashchange', route);
 window.addEventListener('beforeunload', (e) => {
-  if (window.__dirty && window.__dirty()) { e.preventDefault(); e.returnValue = ''; }
+  if (isDirty()) { e.preventDefault(); e.returnValue = ''; }
 });
 
 // ---------- 홈 ----------
 
 async function renderHome() {
+  const reviews = await api('GET', '/api/reviews');
   const today = new Date();
-  const monday = mondayOf(today);
-  const [works, settings, activity] = await Promise.all([
-    api('GET', '/api/works'),
-    api('GET', '/api/settings'),
-    api('GET', `/api/activity?from=${encodeURIComponent(monday.toISOString())}`),
-  ]);
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'][today.getDay()];
+  const drafts = reviews.filter((r) => r.status === 'draft').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const resume = drafts[0];
 
-  const todayRoutine = META.weeklyRoutine.find((r) => r.day === today.getDay());
-  const nextRoutine = todayRoutine || META.weeklyRoutine.find((r) => r.day > today.getDay()) || META.weeklyRoutine[0];
+  let filter = '';
+  const listBox = el('div', { class: 'records' });
+  const filterBox = el('div', { class: 'filters', role: 'group', 'aria-label': '분류 필터' });
 
-  // 이번 주 달력: 요일별 활동 여부
-  const activeDays = new Set(activity.map((a) => ymd(new Date(a.createdAt))));
-  const dayNames = ['월', '화', '수', '목', '금', '토', '일'];
-  const week = el('div', { class: 'week' }, dayNames.map((name, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const routine = META.weeklyRoutine.find((r) => r.day === d.getDay());
-    const done = activeDays.has(ymd(d));
-    const cls = ['day', routine && 'routine', done && 'done', ymd(d) === ymd(today) && 'today'].filter(Boolean).join(' ');
-    return el('div', { class: cls, title: routine ? routine.goal : '' },
-      name,
-      el('span', { class: 'mark' }, done ? '●' : routine ? '○' : '·'),
-      routine ? el('span', { class: 'stage' }, exerciseById(routine.exercise).stage) : null);
-  }));
-
-  const routineCard = el('div', { class: 'card' },
-    el('div', { class: 'spread' },
-      el('h3', {}, todayRoutine ? `오늘(${todayRoutine.label})의 연습` : `다음 연습: ${nextRoutine.label}`),
-      el('span', { class: 'muted small' }, `이번 주 기록 ${activity.length}개`)),
-    el('p', {}, el('strong', {}, exerciseById(nextRoutine.exercise).title), ` — ${nextRoutine.goal}`),
-    el('p', { class: 'muted small' }, exerciseById(nextRoutine.exercise).summary),
-    week,
-    el('div', { class: 'row', style: 'margin-top:12px' },
-      el('a', { class: 'btn primary', href: `#/practice?ex=${nextRoutine.exercise}` }, '연습 시작'),
-      el('span', { class: 'muted small' }, '예전에 봤던 작품이나 읽었던 책의 한 장면으로도 충분합니다.')));
-
-  // 4주 루틴
-  const planCard = el('div', { class: 'card' });
-  const drawPlan = (start) => {
-    planCard.replaceChildren();
-    planCard.append(el('h3', {}, '4주 감상 아카이빙 루틴'));
-    let current = 0;
-    if (start) {
-      const days = Math.floor((new Date(ymd(today)) - new Date(start)) / 86400000);
-      current = days < 0 ? 0 : Math.floor(days / 7) + 1;
-    }
-    const startInput = el('input', { type: 'date', value: start || ymd(today), style: 'max-width:180px' });
-    planCard.append(el('div', { class: 'row', style: 'margin-bottom:10px' },
-      el('span', { class: 'muted small' }, '시작일'),
-      startInput,
-      el('button', {
-        class: 'btn small',
-        onclick: async () => {
-          const s = await api('PUT', '/api/settings', { routineStart: startInput.value });
-          drawPlan(s.routineStart);
-          toast(s.routineStart ? '루틴 시작일을 저장했습니다.' : '루틴을 초기화했습니다.');
-        },
-      }, start ? '변경' : '시작하기')));
-    if (current > 4) planCard.append(el('p', { class: 'muted small' }, '4주 루틴을 마쳤습니다. 처음 쓴 글과 최근 글을 비교해 보세요.'));
-    planCard.append(el('ul', { class: 'list' }, META.fourWeekPlan.map((w) => el('li', {},
-      el('div', { class: 'spread' },
-        el('strong', {}, `${w.week}주 차 — ${w.title}`),
-        w.week === current ? el('span', { class: 'badge' }, '이번 주') : null),
-      el('div', { class: 'muted small' }, w.detail),
-      w.week === current && w.exercise ? el('a', { class: 'btn small', style: 'margin-top:6px', href: `#/practice?ex=${w.exercise}` }, '이 연습 하러 가기') : null,
-      w.week === current && w.essayTarget ? el('a', { class: 'btn small', style: 'margin-top:6px', href: `#/practice?essay=${w.essayTarget}` }, `${w.essayTarget}자 감상문 쓰기`) : null))));
+  const row = (r) => {
+    const date = r.date || r.createdAt.slice(0, 10);
+    const excerpt = r.status === 'draft'
+      ? el('span', { class: 'record-excerpt draft' }, `작성 중 · ${stageLabel(r.stage)}`)
+      : el('span', { class: 'record-excerpt' }, (body(r).split('\n')[0] || r.compose.title || ''));
+    return el('a', { class: 'record', href: r.status === 'draft' ? `#/r/${r.id}/${r.stage}` : `#/r/${r.id}` },
+      el('span', { class: 'record-date' },
+        el('span', { class: 'record-day' }, date.slice(8, 10)),
+        el('span', { class: 'record-month' }, date.slice(0, 7).replace('-', '.'))),
+      el('span', { class: 'record-body' },
+        el('span', { class: 'record-title-row' },
+          el('span', { class: 'badge' }, category(r.category).shortLabel || category(r.category).label),
+          el('span', { class: 'record-title' }, r.title)),
+        excerpt),
+      icon('chevron'));
   };
-  drawPlan(settings.routineStart);
-
-  const recent = works.slice(0, 6);
-  return el('div', {},
-    el('h1', {}, '오늘의 감상 연습'),
-    el('p', { class: 'lead' }, '처음에는 문장을 잘 쓰는 것보다 기억을 잃지 않는 것이 중요합니다.'),
-    el('div', { class: 'card', style: 'margin-bottom:12px' },
-      el('div', { class: 'spread' },
-        el('div', {}, el('h3', {}, '방금 보고 왔나요?'), el('p', { class: 'muted small' }, '작품 정보를 적고 바로 5분 기록을 시작합니다.')),
-        el('a', { class: 'btn primary', href: '#/works/new?then=five-minute' }, '관람 직후 5분 기록'))),
-    el('div', { class: 'grid two' }, routineCard, planCard),
-    el('div', { class: 'spread' }, el('h2', {}, '최근 기록'), el('a', { href: '#/works' }, '전체 보기')),
-    recent.length
-      ? el('div', { class: 'grid' }, recent.map(workCard))
-      : el('div', { class: 'card muted' }, '아직 기록이 없습니다. 최근에 본 공연, 전시, 책 하나부터 등록해 보세요.'));
-}
-
-function workCard(w) {
-  return el('a', { class: 'card', href: `#/w/${w.id}` },
-    el('div', { class: 'row', style: 'margin-bottom:4px' },
-      el('span', { class: 'badge' }, typeLabel(w.type)),
-      el('span', { class: 'muted small' }, w.date || '날짜 없음')),
-    el('h3', {}, w.title),
-    el('div', { class: 'muted small' }, [w.venue, w.creators].filter(Boolean).join(' · ') || ' '),
-    el('div', { class: 'muted small' }, `연습 ${w.notes.length} · 감상문 ${w.essays.length}`));
-}
-
-// ---------- 기록 목록 ----------
-
-async function renderWorks() {
-  const works = await api('GET', '/api/works');
-  const q = currentQuery();
-  let type = q.get('type') || '';
-  const search = el('input', { type: 'search', placeholder: '작품명, 장소, 작가, 태그, 메모 검색', value: q.get('q') || '' });
-  const listBox = el('div', { class: 'grid' });
-  const chips = el('div', { class: 'chips' });
 
   const draw = () => {
-    const term = search.value.trim().toLowerCase();
-    const shown = works.filter((w) => (!type || w.type === type) &&
-      (!term || [w.title, w.venue, w.creators, w.memo, ...(w.tags || [])].join(' ').toLowerCase().includes(term)));
-    listBox.replaceChildren(...(shown.length ? shown.map(workCard) : [el('p', { class: 'muted' }, '해당하는 기록이 없습니다.')]));
-    chips.replaceChildren(
-      ...[{ id: '', label: '전체' }, ...META.workTypes].map((t) => el('button', {
-        class: `chip${type === t.id ? ' on' : ''}`,
-        onclick: () => { type = t.id; draw(); },
-      }, t.label, ` ${t.id ? works.filter((w) => w.type === t.id).length : works.length}`)));
+    const shown = reviews.filter((r) => !filter || r.category === filter);
+    listBox.replaceChildren(...(shown.length
+      ? shown.map(row)
+      : [el('p', { class: 'empty' }, reviews.length ? '이 분류에는 아직 감상이 없어요.' : '아직 남긴 감상이 없어요. 최근에 본 공연이나 전시 하나부터 시작해 보세요.')]));
+    filterBox.replaceChildren(...[{ id: '', label: '전체' }, ...META.CATEGORIES].map((c) =>
+      el('button', { type: 'button', class: 'filter', 'aria-pressed': String(filter === c.id), onclick: () => { filter = c.id; draw(); } }, c.label)));
   };
-  search.addEventListener('input', draw);
   draw();
 
-  return el('div', {},
-    el('div', { class: 'spread' }, el('h1', {}, '관람 기록'), el('a', { class: 'btn primary', href: '#/works/new' }, '+ 새 기록')),
-    el('p', { class: 'lead' }, '작품명 · 관람일 · 장소 · 작가 또는 제작진 · 기억에 남는 장면 · 감상문 · 당시의 질문 · 포스터나 티켓'),
-    search, chips, listBox);
+  return el('div', { class: 'wrap' },
+    el('header', { class: 'topbar' },
+      el('a', { class: 'logo', href: '#/' }, el('span', { class: 'logo-mark' }, icon('pen', 16, '#FFFFFF')), '감상 연습장'),
+      el('span', { class: 'meta-text' }, `기록 ${reviews.length}편`)),
+    el('main', {},
+      el('p', { class: 'today' }, `${today.getMonth() + 1}월 ${today.getDate()}일 ${weekday}요일`),
+      el('h1', { class: 'hero-title' }, '오늘 본 것을', el('br'), '잊기 전에 남겨볼까요?'),
+      el('a', { class: 'cta', href: '#/new' },
+        el('span', { class: 'cta-text' },
+          el('span', { class: 'cta-title' }, '감상 남기기'),
+          el('span', { class: 'cta-sub' }, '질문을 따라 포착 · 질문 · 정리 세 단계로, 5분이면 충분해요')),
+        el('span', { class: 'cta-arrow' }, icon('arrow', 24, '#FFFFFF'))),
+      resume ? el('a', { class: 'resume', href: `#/r/${resume.id}/${resume.stage}` },
+        el('span', { class: 'resume-text' },
+          el('span', { class: 'resume-dot' }),
+          el('span', {}, el('strong', {}, resume.title), el('span', { class: 'meta-text' }, ` · ${stageLabel(resume.stage)} 단계에서 멈췄어요`))),
+        el('span', { class: 'resume-go' }, '이어 쓰기')) : null,
+      el('section', {},
+        el('div', { class: 'list-head' }, el('h2', {}, '나의 감상'), filterBox),
+        listBox)));
 }
 
-// ---------- 작품 등록/편집 ----------
+// ---------- 새 감상 ----------
 
-async function renderWorkForm(id) {
-  const work = id ? await api('GET', `/api/works/${id}`) : { type: 'performance', title: '', date: ymd(new Date()), venue: '', creators: '', tags: [], memo: '' };
-  const then = currentQuery().get('then');
-  const f = {
-    type: el('select', {}, META.workTypes.map((t) => el('option', { value: t.id, selected: t.id === work.type }, t.label))),
-    title: el('input', { type: 'text', value: work.title, required: true, placeholder: '예: 갈매기' }),
-    date: el('input', { type: 'date', value: work.date }),
-    venue: el('input', { type: 'text', value: work.venue, placeholder: '공연장, 미술관, 박람회장 등' }),
-    creators: el('input', { type: 'text', value: work.creators, placeholder: '작가, 연출, 출연, 큐레이터 등' }),
-    tags: el('input', { type: 'text', value: (work.tags || []).join(', '), placeholder: '쉼표로 구분' }),
-    memo: autoGrow(el('textarea', { placeholder: '기억에 남는 장면, 함께 간 사람, 그날의 상황 등 자유 메모', value: work.memo })),
-  };
-  f.type.value = work.type;
-  const field = (label, input, hint) => el('label', { class: 'field' }, el('span', {}, label), hint ? el('span', { class: 'hint' }, hint) : null, input);
+async function renderNew() {
+  let picked = 'performance';
+  const tiles = META.CATEGORIES.map((c) => el('button', {
+    type: 'button',
+    class: 'category',
+    'aria-pressed': String(c.id === picked),
+    onclick: () => {
+      picked = c.id;
+      tiles.forEach((t) => t.setAttribute('aria-pressed', String(t.dataset.id === picked)));
+    },
+    'data-id': c.id,
+  }, icon(c.id, 28, '#111113', 1.6), el('span', { class: 'category-name' }, c.label), el('span', { class: 'category-examples' }, c.examples)));
+
+  const title = el('input', { class: 'input lg', type: 'text', name: 'title', autocomplete: 'off', placeholder: '예: 갈매기' });
+  const date = el('input', { class: 'input', type: 'date', name: 'date', value: ymd(new Date()) });
+  const venue = el('input', { class: 'input', type: 'text', name: 'venue', autocomplete: 'off', placeholder: '공연장, 미술관 등' });
 
   const form = el('form', {
-    class: 'card',
+    novalidate: true,
     onsubmit: async (e) => {
       e.preventDefault();
-      const body = Object.fromEntries(Object.entries(f).map(([k, inp]) => [k, inp.value]));
+      if (!title.value.trim()) { toast('작품명을 적어주세요.'); title.focus(); return; }
       try {
-        const saved = id ? await api('PUT', `/api/works/${id}`, body) : await api('POST', '/api/works', body);
-        toast('저장했습니다.');
-        location.hash = then && exerciseById(then) ? `#/w/${saved.id}/practice/${then}` : `#/w/${saved.id}`;
-      } catch (err) {
-        toast(err.message);
-      }
-    },
-  },
-  el('div', { class: 'grid' }, field('종류', f.type), field('관람일', f.date)),
-  field('작품명', f.title),
-  el('div', { class: 'grid' }, field('장소', f.venue), field('작가·제작진', f.creators)),
-  field('태그', f.tags),
-  field('메모', f.memo),
-  el('div', { class: 'row' },
-    el('button', { class: 'btn primary', type: 'submit' }, id ? '저장' : then ? '등록하고 기록 시작' : '등록'),
-    el('a', { class: 'btn', href: id ? `#/w/${id}` : '#/works' }, '취소')));
-
-  return el('div', {}, el('h1', {}, id ? '기록 편집' : '새 관람 기록'), el('p', { class: 'lead' }, '기본 정보는 짧게 적고 넘어가도 됩니다.'), form);
-}
-
-// ---------- 작품 상세 ----------
-
-async function renderWork(id) {
-  const [work, all] = await Promise.all([api('GET', `/api/works/${id}`), api('GET', '/api/works')]);
-
-  // 같은 작가·제작진 또는 같은 작품명의 다른 기록 (예전 감상과 비교하기)
-  const norm = (s) => (s || '').trim().toLowerCase();
-  const related = all.filter((w) => w.id !== work.id && (
-    norm(w.title) === norm(work.title) ||
-    (norm(work.creators) && norm(w.creators) && (norm(w.creators).includes(norm(work.creators)) || norm(work.creators).includes(norm(w.creators))))));
-
-  const posterInput = el('input', {
-    type: 'file',
-    accept: 'image/png,image/jpeg,image/webp,image/gif',
-    hidden: true,
-    onchange: async () => {
-      const file = posterInput.files[0];
-      if (!file) return;
-      try {
-        await api('PUT', `/api/works/${id}/poster`, file);
-        toast('이미지를 올렸습니다.');
-        route();
+        const r = await api('POST', '/api/reviews', { category: picked, title: title.value, date: date.value, venue: venue.value });
+        location.hash = `#/r/${r.id}/capture`;
       } catch (err) { toast(err.message); }
     },
-  });
-
-  const meta = [['관람일', work.date], ['장소', work.venue], ['작가·제작진', work.creators], ['태그', (work.tags || []).join(', ')]].filter(([, v]) => v);
-
-  const head = el('div', { class: 'card' },
-    el('div', { class: 'row', style: 'align-items:flex-start;gap:20px' },
-      work.poster ? el('img', { class: 'poster', src: `/uploads/${encodeURIComponent(work.poster)}`, alt: '포스터·티켓' }) : null,
-      el('div', { style: 'flex:1;min-width:220px' },
-        el('span', { class: 'badge' }, typeLabel(work.type)),
-        el('h1', { style: 'margin-top:6px' }, work.title),
-        el('table', {}, meta.map(([k, v]) => el('tr', {}, el('th', { style: 'width:110px' }, k), el('td', {}, v)))),
-        work.memo ? el('p', { class: 'preview', style: 'margin-top:10px' }, work.memo) : null,
-        el('div', { class: 'row', style: 'margin-top:12px' },
-          el('a', { class: 'btn', href: `#/w/${id}/edit` }, '편집'),
-          el('button', { class: 'btn', onclick: () => posterInput.click() }, work.poster ? '포스터·티켓 바꾸기' : '포스터·티켓 올리기'),
-          el('a', { class: 'btn', href: `/api/works/${id}/export.md` }, 'Markdown 내보내기'),
-          el('button', {
-            class: 'btn danger',
-            onclick: async () => {
-              if (!confirm(`'${work.title}' 기록과 연습·감상문을 모두 삭제할까요?`)) return;
-              await api('DELETE', `/api/works/${id}`);
-              toast('삭제했습니다.');
-              location.hash = '#/works';
-            },
-          }, '삭제'),
-          posterInput))));
-
-  const stageOrder = ['포착하기', '질문하기', '발전시키기', '기본기'];
-  const exerciseButtons = el('div', { class: 'chips' }, [...META.exercises]
-    .sort((a, b) => stageOrder.indexOf(a.stage) - stageOrder.indexOf(b.stage))
-    .map((ex) => el('a', { class: 'chip', href: `#/w/${id}/practice/${ex.id}`, style: 'text-decoration:none' }, `${ex.stage} · ${ex.title}`)));
-
-  const notes = [...work.notes].reverse();
-  const essays = [...work.essays].reverse();
+  },
+  el('fieldset', { style: 'border:0;padding:0;margin:0' },
+    el('legend', { class: 'sr-only' }, '분류'),
+    el('div', { class: 'categories' }, tiles)),
+  el('div', { class: 'form-fields' },
+    el('label', { class: 'field' }, el('span', { class: 'field-label' }, '작품명'), title),
+    el('div', { class: 'form-row' },
+      el('label', { class: 'field' }, el('span', { class: 'field-label' }, '관람일'), date),
+      el('label', { class: 'field' }, el('span', { class: 'field-label' }, '장소 ', el('small', {}, '(선택)')), venue))),
+  el('button', { type: 'submit', class: 'btn-primary block' }, '작성 시작', icon('arrow', 20, '#FFFFFF')));
 
   return el('div', {},
-    head,
-    el('h2', {}, '연습하기'),
-    el('div', { class: 'card' },
-      el('p', { class: 'muted small' }, '포착하기 → 질문하기 → 발전시키기 순서를 추천합니다. 단계별로 한 문장씩만 적어도 됩니다.'),
-      exerciseButtons),
-    el('div', { class: 'spread' },
-      el('h2', {}, `감상문 ${essays.length}`),
-      el('a', { class: 'btn primary', href: `#/w/${id}/essay/new` }, '+ 감상문 쓰기')),
-    essays.length
-      ? el('div', { class: 'card' }, el('ul', { class: 'list' }, essays.map((e) => {
-        const body = essayBody(e);
-        return el('li', {},
-          el('div', { class: 'spread' },
-            el('a', { href: `#/w/${id}/essay/${e.id}` }, el('strong', {}, e.title || '제목 없음')),
-            el('span', { class: 'muted small' }, `${shortDate(e.createdAt)} · ${body.length}자`)),
-          el('div', { class: 'muted small' }, preview(body, 120) || '(비어 있음)'));
-      })))
-      : el('div', { class: 'card muted' }, '연습 기록이 쌓이면 그 내용을 바탕으로 200~400자 정도의 짧은 감상문을 써보세요.'),
-    el('h2', {}, `연습 기록 ${notes.length}`),
-    notes.length
-      ? el('div', { class: 'card' }, el('ul', { class: 'list' }, notes.map((n) => el('li', {},
-        el('div', { class: 'spread' },
-          el('a', { href: `#/w/${id}/note/${n.id}` }, el('strong', {}, exerciseById(n.exercise)?.title || n.exercise)),
-          el('span', { class: 'muted small' }, shortDate(n.createdAt))),
-        el('div', { class: 'muted small' }, noteSummary(n))))))
-      : el('div', { class: 'card muted' }, '아직 연습 기록이 없습니다.'),
-    related.length ? el('h2', {}, '같은 작품·작가의 다른 기록') : null,
-    related.length ? el('div', { class: 'grid' }, related.map(workCard)) : null);
+    el('div', { class: 'wrap' },
+      el('header', { class: 'new-header' },
+        el('a', { class: 'icon-btn outlined', href: '#/', 'aria-label': '홈으로' }, icon('close')),
+        el('span', { class: 'meta-text' }, '새 감상'),
+        el('span'))),
+    el('main', { class: 'new-main' },
+      el('h1', {}, '무엇을 보고 왔나요?'),
+      el('p', {}, '고른 분류에 맞춰 질문과 힌트가 달라져요.'),
+      form));
 }
 
-// ---------- 연습 기록 작성 ----------
+// ---------- 작성: 포착 · 질문 · 정리 ----------
 
-async function renderNote(workId, exerciseId, noteId) {
-  const work = await api('GET', `/api/works/${workId}`);
-  let note = noteId ? work.notes.find((n) => n.id === noteId) : null;
-  if (noteId && !note) throw new Error('연습 기록을 찾을 수 없습니다.');
-  const ex = exerciseById(note ? note.exercise : exerciseId);
-  if (!ex) throw new Error('알 수 없는 연습 유형입니다.');
-
-  const status = el('span', { class: 'status' }, note ? `마지막 저장 ${shortDate(note.updatedAt)}` : '입력하면 자동 저장됩니다.');
-  const inputs = {};
-  const collect = () => Object.fromEntries(Object.entries(inputs).map(([k, t]) => [k, t.value]));
+async function renderWrite(id, stage) {
+  const review = await api('GET', `/api/reviews/${id}`);
+  const cat = category(review.category);
+  const status = el('span', { class: 'save-state', role: 'status' }, '저장됨');
+  const data = { capture: { ...review.capture }, question: { ...review.question, whys: [...review.question.whys] }, compose: { ...review.compose } };
 
   const saver = autosaver(async () => {
-    if (!note) {
-      note = await api('POST', `/api/works/${workId}/notes`, { exercise: ex.id, answers: collect() });
-      history.replaceState(null, '', `#/w/${workId}/note/${note.id}`);
-    } else {
-      note = await api('PUT', `/api/works/${workId}/notes/${note.id}`, { answers: collect() });
-    }
+    const patch = { stage };
+    patch[stage] = data[stage];
+    await api('PATCH', `/api/reviews/${id}`, patch);
   }, status);
+  isDirty = () => saver.dirty;
+  cleanup = () => saver.flush();
 
-  // 같은 작품의 다른 연습에서 적은 내용을 출발점으로 가져올 수 있게 한다.
-  const priorSnippets = [];
-  for (const n of work.notes) {
-    if (note && n.id === note.id) continue;
-    const pex = exerciseById(n.exercise);
-    if (!pex) continue;
-    for (const f of pex.fields) {
-      const v = (n.answers[f.key] || '').trim();
-      if (v && !priorSnippets.includes(v)) priorSnippets.push(v);
+  // 단계를 연 것만으로도 '멈춘 단계'를 기록한다.
+  if (review.stage !== stage) api('PATCH', `/api/reviews/${id}`, { stage }).catch(() => {});
+
+  const bind = (textarea, obj, key) => {
+    textarea.addEventListener('input', () => { obj[key] = textarea.value; saver.touch(); });
+    return textarea;
+  };
+
+  const header = el('header', { class: 'write-header' },
+    el('div', { class: 'write-header-row' },
+      el('a', { class: 'icon-btn', href: '#/', 'aria-label': '닫기' }, icon('close')),
+      el('span', { class: 'write-work' }, el('span', { class: 'badge' }, cat.shortLabel || cat.label), el('strong', {}, review.title)),
+      status),
+    el('nav', { class: 'steps', 'aria-label': '작성 단계' }, META.STAGES.map((s, i) =>
+      el('a', { class: 'step', href: `#/r/${id}/${s.id}`, 'aria-current': s.id === stage ? 'step' : null }, `${i + 1} ${s.label}`))));
+
+  const pages = { capture: writeCapture, question: writeQuestion, compose: writeCompose };
+  const main = pages[stage]({ id, review, cat, data, bind, saver });
+  return el('div', {}, header, main);
+}
+
+function writeCapture({ id, cat, data, bind }) {
+  const examples = [];
+  const cards = META.CAPTURE_FIELDS.map((f) => {
+    const ta = bind(textArea(data.capture[f.key], { placeholder: f.placeholder || '기억나는 장면을 그대로', rows: 3 }), data.capture, f.key);
+    const ex = el('div', { class: 'example', hidden: true }, el('b', {}, '예'), META.EXAMPLE[f.key]);
+    examples.push(ex);
+    return el('div', { class: 'card' },
+      el('label', {},
+        el('span', { class: 'card-label' }, f.label, f.optional ? el('small', {}, ' (선택)') : null),
+        ta),
+      nudgeFor(ta), ex);
+  });
+
+  const exampleBtn = el('button', {
+    type: 'button',
+    class: 'link-btn',
+    'aria-expanded': 'false',
+    onclick: () => {
+      const show = exampleBtn.getAttribute('aria-expanded') !== 'true';
+      exampleBtn.setAttribute('aria-expanded', String(show));
+      exampleBtn.textContent = show ? '예시 숨기기' : '예시 보기';
+      examples.forEach((x) => { x.hidden = !show; });
+    },
+  }, '예시 보기');
+
+  return el('main', { class: 'narrow' },
+    el('h1', { class: 'page-title' }, '무엇이 남았나요?'),
+    el('p', { class: 'page-desc' }, '해석하거나 평가하지 말고, 기억나는 장면을 있는 그대로 적어보세요.'),
+    el('div', { class: 'hints', 'aria-label': '힌트' }, cat.hints.map((h) => el('span', { class: 'hint' }, h))),
+    el('div', { class: 'cards' }, cards),
+    el('div', { class: 'actions' },
+      exampleBtn,
+      el('a', { class: 'btn-primary', href: `#/r/${id}/question` }, '다음 · 질문하기', icon('arrow', 18, '#FFFFFF'))));
+}
+
+function writeQuestion({ id, data, bind, saver }) {
+  const q = data.question;
+  const scenes = META.CAPTURE_FIELDS.filter((f) => data.capture[f.key].trim());
+  if (scenes.length && !scenes.some((f) => f.key === q.scene)) q.scene = scenes[0].key;
+
+  const scenePicker = scenes.length
+    ? el('fieldset', { class: 'scenes' },
+      el('legend', { class: 'sr-only' }, '질문할 장면'),
+      scenes.map((f) => el('label', { class: 'scene' },
+        el('input', {
+          type: 'radio',
+          name: 'scene',
+          value: f.key,
+          checked: q.scene === f.key,
+          onchange: () => { q.scene = f.key; saver.touch(); },
+        }),
+        el('span', {}, data.capture[f.key]))))
+    : el('p', { class: 'notice' }, '아직 포착한 장면이 없어요. ', el('a', { href: `#/r/${id}/capture` }, '포착하기'), '에서 기억나는 장면을 먼저 적어보세요.');
+
+  // 감정 카드: 막연한 표현이면 '왜?'를 한 번 더 묻는 칸을 덧붙인다.
+  const emotionField = META.QUESTION_FIELDS.find((f) => f.key === 'emotion');
+  const emotionCard = el('div', { class: 'card' });
+  const drawEmotion = (focusLast) => {
+    const fields = [];
+    const emotionTa = bind(textArea(q.emotion, { class: 'text sm', placeholder: emotionField.placeholder, rows: 1 }), q, 'emotion');
+    fields.push(emotionTa);
+    const whyBlocks = q.whys.map((w, i) => {
+      const ta = textArea(w, { class: 'text sm', rows: 1, placeholder: '떠오르는 대로' });
+      ta.addEventListener('input', () => { q.whys[i] = ta.value; saver.touch(); });
+      fields.push(ta);
+      return el('label', { class: 'why' }, el('span', { class: 'card-label q' }, META.WHY_LABEL), ta);
+    });
+    const nudge = el('div', { class: 'nudge', hidden: true });
+    const updateNudge = () => {
+      const last = [...fields].reverse().find((t) => t.value.trim());
+      const w = last ? vagueWord(last.value) : null;
+      nudge.hidden = !w;
+      if (!w) return;
+      nudge.replaceChildren(el('span', {}, `‘${w}’에서 한 걸음만 더. 무엇이 그랬나요?`),
+        q.whys.length < META.MAX_WHYS
+          ? el('button', { type: 'button', onclick: () => { q.whys.push(''); saver.touch(); drawEmotion(true); } }, '‘왜?’ 한 번 더 묻기')
+          : null);
+    };
+    fields.forEach((t) => t.addEventListener('input', updateNudge));
+    updateNudge();
+    emotionCard.replaceChildren(
+      el('label', {}, el('span', { class: 'card-label q' }, emotionField.label), emotionTa),
+      ...whyBlocks, nudge);
+    if (focusLast) fields[fields.length - 1].focus();
+  };
+  drawEmotion(false);
+
+  const cards = META.QUESTION_FIELDS.map((f) => {
+    if (f.key === 'emotion') return emotionCard;
+    const ta = bind(textArea(q[f.key], { class: 'text sm', placeholder: f.placeholder || '' }), q, f.key);
+    return el('div', { class: 'card' }, el('label', {}, el('span', { class: 'card-label q' }, f.label), ta), nudgeFor(ta));
+  });
+
+  return el('main', { class: 'narrow' },
+    el('h1', { class: 'page-title' }, '왜 그 장면이 남았을까요?'),
+    el('p', { class: 'page-desc' }, '장면 하나를 골라 질문을 던져보세요. 모두 답하지 않아도 괜찮아요.'),
+    scenePicker,
+    el('div', { class: 'cards tight' }, cards),
+    el('div', { class: 'actions' },
+      el('a', { class: 'btn-secondary', href: `#/r/${id}/capture` }, '이전'),
+      el('a', { class: 'btn-primary', href: `#/r/${id}/compose` }, '다음 · 정리하기', icon('arrow', 18, '#FFFFFF'))));
+}
+
+function writeCompose({ id, review, data, bind, saver }) {
+  const c = data.compose;
+  const sectionInputs = {};
+  let lastFocused = META.COMPOSE_SECTIONS[0].key;
+
+  const count = el('span', { class: 'count' });
+  const bar = el('div', {});
+  const refresh = () => {
+    const n = META.COMPOSE_SECTIONS.map((s) => c[s.key].trim()).filter(Boolean).join('\n\n').replace(/\n/g, '').length;
+    count.textContent = `${n} / ${META.TARGET_LENGTH}자`;
+    bar.style.width = `${Math.min(100, (n / META.TARGET_LENGTH) * 100)}%`;
+  };
+
+  const titleInput = el('input', { class: 'paper-title', type: 'text', 'aria-label': '제목', placeholder: '제목', value: c.title });
+  titleInput.addEventListener('input', () => { c.title = titleInput.value; saver.touch(); });
+
+  const sections = META.COMPOSE_SECTIONS.map((s) => {
+    const ta = bind(textArea(c[s.key], { placeholder: s.placeholder }), c, s.key);
+    ta.addEventListener('input', refresh);
+    ta.addEventListener('focus', () => { lastFocused = s.key; });
+    sectionInputs[s.key] = ta;
+    return el('div', { class: 'section' },
+      el('label', { class: 'section-label', for: `sec-${s.key}` }, el('b', {}, s.label), el('span', {}, s.guide)),
+      Object.assign(ta, { id: `sec-${s.key}` }),
+      nudgeFor(ta));
+  });
+  refresh();
+
+  // 포착·질문 단계에서 적은 재료
+  const materials = [];
+  for (const f of META.CAPTURE_FIELDS) {
+    if (data.capture[f.key].trim()) materials.push({ from: `포착 · ${f.label}`, text: data.capture[f.key].trim() });
+  }
+  for (const f of META.QUESTION_FIELDS) {
+    if (data.question[f.key].trim()) materials.push({ from: `질문 · ${f.short}`, text: data.question[f.key].trim() });
+    if (f.key === 'emotion') {
+      for (const w of data.question.whys) if (w.trim()) materials.push({ from: `질문 · ${META.WHY_LABEL}`, text: w.trim() });
     }
   }
 
-  const timer = timerWidget(ex.minutes);
-  const showExample = el('input', { type: 'checkbox' });
-  const examples = [];
-
-  const fields = ex.fields.map((f, i) => {
-    const ta = autoGrow(el('textarea', { value: note?.answers[f.key] || '', placeholder: '생각나는 대로 짧게' }));
-    ta.addEventListener('input', () => saver.touch());
-    inputs[f.key] = ta;
-    const hint = i === 0 && META.typeHints[work.type] && !f.hint.startsWith('예:') ? `${f.hint}${f.hint ? ' · ' : ''}${META.typeHints[work.type]}` : f.hint;
-    const exampleBox = ex.example?.[f.key] ? el('div', { class: 'example', hidden: true }, `예) ${ex.example[f.key]}`) : null;
-    if (exampleBox) examples.push(exampleBox);
-    const chips = i === 0 && priorSnippets.length
-      ? el('details', {}, el('summary', { class: 'small' }, '앞서 적은 내용에서 가져오기'),
-        el('div', { class: 'chips' }, priorSnippets.slice(0, 12).map((s) => el('button', { class: 'chip', type: 'button', title: s, onclick: () => insertText(ta, s) }, preview(s, 40)))))
-      : null;
-    return el('div', { class: 'field' },
-      el('span', {}, f.label),
-      hint ? el('span', { class: 'hint' }, hint) : null,
-      chips, ta, vagueBox(ta), exampleBox);
-  });
-  showExample.addEventListener('change', () => examples.forEach((x) => { x.hidden = !showExample.checked; }));
-
-  window.__dirty = () => saver.dirty;
-  cleanup = async () => { timer.stop(); window.__dirty = null; await saver.flush(); };
-
-  const actions = el('div', { class: 'row' },
-    el('button', { class: 'btn primary', type: 'button', onclick: async () => { saver.touch(); await saver.flush(); location.hash = `#/w/${workId}`; } }, '저장하고 돌아가기'),
-    el('a', { class: 'btn', href: `#/w/${workId}/essay/new` }, '이 내용으로 감상문 쓰기'),
-    note || noteId ? el('button', {
-      class: 'btn danger',
-      type: 'button',
-      onclick: async () => {
-        if (!note || !confirm('이 연습 기록을 삭제할까요?')) return;
-        await api('DELETE', `/api/works/${workId}/notes/${note.id}`);
-        window.__dirty = null;
-        cleanup = null;
-        location.hash = `#/w/${workId}`;
-      },
-    }, '삭제') : null,
-    status);
-
-  return el('div', {},
-    el('p', { class: 'muted small' }, el('a', { href: `#/w/${workId}` }, `← ${work.title}`), ` · ${ex.stage}`),
-    el('h1', {}, ex.title),
-    el('p', { class: 'lead' }, ex.summary),
-    el('div', { class: 'row', style: 'margin-bottom:14px' },
-      timer.node,
-      ex.example ? el('label', { class: 'row small' }, showExample, '예시 보기 (연극 〈갈매기〉)') : null),
-    el('div', { class: 'card' }, fields, actions));
-}
-
-// ---------- 감상문 작성 ----------
-
-const SECTION_SOURCES = {
-  intro: ['memorable', 'scene1', 'pick', 'topic', 'start'],
-  describe: ['scene1', 'scene2', 'scene3', 'scene', 'observe', 'memorable', 'target', 's1', 's2', 's3', 's4', 's5', 'unexpected'],
-  reflect: ['feel', 'interpret', 'emotion', 'reason', 'q1', 'q2', 'q3', 'q4', 'why1', 'why2', 'why3'],
-  closing: ['q5', 'pick', 'topic', 'newThought', 'topics'],
-};
-
-async function renderEssay(workId, essayId) {
-  const work = await api('GET', `/api/works/${workId}`);
-  let essay = essayId ? work.essays.find((e) => e.id === essayId) : null;
-  if (essayId && !essay) throw new Error('감상문을 찾을 수 없습니다.');
-  const presetTarget = Number(currentQuery().get('target')) || 300;
-
-  const status = el('span', { class: 'status' }, essay ? `마지막 저장 ${shortDate(essay.updatedAt)}` : '입력하면 자동 저장됩니다.');
-  const title = el('input', { type: 'text', value: essay?.title || '', placeholder: '제목 (나중에 정해도 됩니다)' });
-  const target = el('select', {}, META.essayTargets.map((n) => el('option', { value: n, selected: n === (essay?.target || presetTarget) }, `${n}자 목표`)));
-  target.value = String(essay?.target || presetTarget);
-  const sectionInputs = {};
-  const checkInputs = {};
-
-  const collect = () => ({
-    title: title.value,
-    target: Number(target.value),
-    sections: Object.fromEntries(Object.entries(sectionInputs).map(([k, t]) => [k, t.value])),
-    checks: Object.fromEntries(Object.entries(checkInputs).map(([k, c]) => [k, c.checked])),
-  });
-
-  const saver = autosaver(async () => {
-    if (!essay) {
-      essay = await api('POST', `/api/works/${workId}/essays`, collect());
-      history.replaceState(null, '', `#/w/${workId}/essay/${essay.id}`);
-    } else {
-      essay = await api('PUT', `/api/works/${workId}/essays/${essay.id}`, collect());
-    }
-  }, status);
-
-  // 연습 기록에서 가져올 수 있는 재료
-  const material = (keys) => {
-    const out = [];
-    for (const n of work.notes) {
-      for (const k of keys) {
-        const v = (n.answers[k] || '').trim();
-        if (v && !out.includes(v)) out.push(v);
-      }
-    }
-    return out;
+  const insert = (text) => {
+    const ta = sectionInputs[lastFocused];
+    ta.value = ta.value.trim() ? `${ta.value.trimEnd()} ${text}` : text;
+    ta.dispatchEvent(new Event('input'));
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
   };
 
-  const totalBox = el('div', { class: 'small' });
-  const bar = el('div', { class: 'progress' }, el('div', { style: 'width:0' }));
-  const previewBox = el('div', { class: 'preview' });
-  const vagueAll = el('div', { class: 'vague', hidden: true });
-
-  const refresh = () => {
-    const body = META.essaySections.map((s) => sectionInputs[s.key].value.trim()).filter(Boolean).join('\n\n');
-    const c = charCount(body);
-    const goal = Number(target.value);
-    totalBox.textContent = `${c.withSpace}자 (공백 제외 ${c.noSpace}자) / 목표 ${goal}자`;
-    bar.firstChild.style.width = `${Math.min(100, (c.withSpace / goal) * 100)}%`;
-    bar.classList.toggle('done', c.withSpace >= goal);
-    previewBox.textContent = body || '네 부분을 채우면 여기에 한 편의 글로 이어져 보입니다.';
-    const hits = vagueHits(body);
-    vagueAll.hidden = !hits.length;
-    vagueAll.textContent = hits.length ? `피상적으로 끝나는 표현: ${hits.join(', ')}` : '';
+  const finish = async () => {
+    if (!META.COMPOSE_SECTIONS.some((s) => c[s.key].trim())) { toast('한 칸이라도 채워야 완료할 수 있어요.'); return; }
+    await saver.flush();
+    if (saver.dirty) return;
+    try {
+      await api('PATCH', `/api/reviews/${id}`, { status: 'done', stage: 'compose' });
+      location.hash = `#/r/${id}`;
+    } catch (err) { toast(err.message); }
   };
 
-  const sections = META.essaySections.map((s) => {
-    const ta = autoGrow(el('textarea', { value: essay?.sections?.[s.key] || '', placeholder: s.guide }));
-    sectionInputs[s.key] = ta;
-    const counter = el('span', { class: 'counter' });
-    const updateCounter = () => { counter.textContent = `${sentenceCount(ta.value)}문장 · ${ta.value.length}자 (권장 ${s.sentences})`; };
-    ta.addEventListener('input', () => { updateCounter(); refresh(); saver.touch(); });
-    updateCounter();
-    const mats = material(SECTION_SOURCES[s.key] || []);
-    return el('div', { class: 'field', style: 'margin-bottom:18px' },
-      el('div', { class: 'section-head' }, el('strong', {}, s.label), counter),
-      el('span', { class: 'hint' }, s.guide),
-      mats.length ? el('div', { class: 'chips' }, mats.slice(0, 8).map((m) => el('button', { class: 'chip', type: 'button', title: m, onclick: () => insertText(ta, m) }, `+ ${preview(m, 36)}`))) : null,
-      ta, vagueBox(ta));
-  });
-
-  const checks = el('div', {}, META.selfChecks.map((c) => {
-    const cb = el('input', { type: 'checkbox', checked: Boolean(essay?.checks?.[c.key]), onchange: () => saver.touch() });
-    checkInputs[c.key] = cb;
-    return el('label', { class: 'row small', style: 'align-items:flex-start;margin-bottom:6px;flex-wrap:nowrap' }, cb, el('span', {}, el('strong', {}, c.label), ` — ${c.question}`));
-  }));
-
-  title.addEventListener('input', () => saver.touch());
-  target.addEventListener('change', () => { refresh(); saver.touch(); });
-  refresh();
-
-  // 참고 패널: 이 작품의 연습 기록과 지난 감상문
-  const otherEssays = work.essays.filter((e) => !essay || e.id !== essay.id);
-  const aside = el('aside', {},
-    el('div', { class: 'card' },
-      el('h3', {}, '연습 기록'),
-      work.notes.length
-        ? work.notes.map((n) => {
-          const ex = exerciseById(n.exercise);
-          if (!ex) return null;
-          return el('details', { style: 'margin-bottom:8px' },
-            el('summary', { class: 'small' }, `${ex.title} · ${shortDate(n.createdAt)}`),
-            el('ul', { class: 'list small' }, ex.fields.filter((f) => (n.answers[f.key] || '').trim()).map((f) =>
-              el('li', {}, el('div', { class: 'muted' }, f.label), el('div', { class: 'preview', style: 'font-size:14px' }, n.answers[f.key])))));
-        })
-        : el('p', { class: 'muted small' }, '아직 연습 기록이 없습니다. ', el('a', { href: `#/w/${workId}/practice/discovery` }, '감상 발견 연습장'), '부터 채워보면 쓸 거리가 생깁니다.')),
-    otherEssays.length ? el('div', { class: 'card' },
-      el('h3', {}, '지난 감상문과 비교'),
-      otherEssays.map((e) => el('details', { style: 'margin-bottom:8px' },
-        el('summary', { class: 'small' }, `${e.title || '제목 없음'} · ${essayBody(e).length}자`),
-        el('div', { class: 'preview', style: 'font-size:14px' }, essayBody(e))))) : null);
-
-  window.__dirty = () => saver.dirty;
-  cleanup = async () => { window.__dirty = null; await saver.flush(); };
-
-  return el('div', {},
-    el('p', { class: 'muted small' }, el('a', { href: `#/w/${workId}` }, `← ${work.title}`)),
-    el('h1', {}, essay ? '감상문 다듬기' : '짧은 감상문 쓰기'),
-    el('p', { class: 'lead' }, '줄거리 전체나 배경 설명은 없어도 됩니다. 하나의 장면에서 출발해 나의 생각으로 넓혀 보세요.'),
-    el('div', { class: 'editor' },
-      el('div', {},
-        el('div', { class: 'card' },
-          el('div', { class: 'row', style: 'margin-bottom:14px;flex-wrap:nowrap' }, title, el('div', { style: 'width:140px;flex:none' }, target)),
-          sections,
-          el('div', { style: 'margin:8px 0 4px' }, totalBox),
-          bar,
-          vagueAll),
-        el('div', { class: 'card' }, el('h3', {}, '이어 읽기'), previewBox),
-        el('div', { class: 'card' }, el('h3', {}, '자기 점검'), checks),
-        el('div', { class: 'row', style: 'margin-top:12px' },
-          el('button', { class: 'btn primary', type: 'button', onclick: async () => { saver.touch(); await saver.flush(); location.hash = `#/w/${workId}`; } }, '저장하고 돌아가기'),
-          el('button', {
-            class: 'btn',
-            type: 'button',
-            onclick: async () => {
-              const body = META.essaySections.map((s) => sectionInputs[s.key].value.trim()).filter(Boolean).join('\n\n');
-              await navigator.clipboard.writeText(title.value ? `${title.value}\n\n${body}` : body);
-              toast('클립보드에 복사했습니다.');
-            },
-          }, '본문 복사'),
-          essayId ? el('button', {
-            class: 'btn danger',
-            type: 'button',
-            onclick: async () => {
-              if (!essay || !confirm('이 감상문을 삭제할까요?')) return;
-              await api('DELETE', `/api/works/${workId}/essays/${essay.id}`);
-              window.__dirty = null;
-              cleanup = null;
-              location.hash = `#/w/${workId}`;
-            },
-          }, '삭제') : null,
-          status)),
-      aside));
+  return el('main', { class: 'compose-layout' },
+    el('section', { class: 'compose-main' },
+      el('h1', { class: 'page-title' }, '한 편으로 정리하기'),
+      el('p', { class: 'page-desc' }, '줄거리나 배경 설명은 없어도 돼요. 하나의 장면에서 내 생각으로 넓혀보세요.'),
+      el('div', { class: 'paper' },
+        titleInput,
+        sections,
+        el('div', { class: 'progress-row' }, el('div', { class: 'progress' }, bar), count)),
+      el('div', { class: 'actions', style: 'margin-top:32px' },
+        el('a', { class: 'btn-secondary', href: `#/r/${id}/question` }, '이전'),
+        el('button', { type: 'button', class: 'btn-primary', onclick: finish },
+          review.status === 'done' ? '수정 완료' : '감상 완료', icon('check', 18, '#FFFFFF')))),
+    el('aside', { class: 'compose-side' },
+      el('div', { class: 'materials' },
+        el('h2', {}, '내가 적은 재료'),
+        el('p', {}, materials.length ? '누르면 지금 쓰는 칸에 들어가요.' : '포착 · 질문 단계에서 적은 내용이 여기에 모여요.'),
+        el('div', { class: 'material-list' }, materials.map((m) =>
+          el('button', { type: 'button', class: 'material', onmousedown: (e) => e.preventDefault(), onclick: () => insert(m.text) },
+            el('small', {}, m.from), el('span', {}, m.text)))))));
 }
 
-// ---------- 연습 고르기 ----------
+// ---------- 감상 읽기 ----------
 
-async function renderPractice() {
-  const works = await api('GET', '/api/works');
-  const q = currentQuery();
-  const pre = q.get('ex');
-  const essayTarget = q.get('essay');
+async function renderDetail(id) {
+  const r = await api('GET', `/api/reviews/${id}`);
+  const cat = category(r.category);
+  const paragraphs = META.COMPOSE_SECTIONS.map((s) => r.compose[s.key].trim()).filter(Boolean);
 
-  const select = el('select', {}, works.length
-    ? works.map((w) => el('option', { value: w.id }, `[${typeLabel(w.type)}] ${w.title}${w.date ? ` · ${w.date}` : ''}`))
-    : el('option', { value: '' }, '등록된 작품이 없습니다'));
+  const sources = [];
+  for (const f of META.CAPTURE_FIELDS) if (r.capture[f.key].trim()) sources.push({ from: `포착 · ${f.label}`, text: r.capture[f.key] });
+  for (const f of META.QUESTION_FIELDS) {
+    if (f.key === 'remaining') continue;
+    if (r.question[f.key].trim()) sources.push({ from: `질문 · ${f.short}`, text: r.question[f.key] });
+    if (f.key === 'emotion') for (const w of r.question.whys) if (w.trim()) sources.push({ from: `질문 · ${META.WHY_LABEL}`, text: w });
+  }
+  const captureCount = sources.filter((s) => s.from.startsWith('포착')).length;
 
-  const go = (path) => {
-    if (!select.value) { toast('먼저 작품을 등록해 주세요.'); return; }
-    location.hash = `#/w/${select.value}/${path}`;
+  const remove = async () => {
+    if (!confirm(`‘${r.compose.title || r.title}’ 감상을 삭제할까요? 되돌릴 수 없어요.`)) return;
+    await api('DELETE', `/api/reviews/${id}`);
+    toast('삭제했어요.');
+    location.hash = '#/';
   };
 
-  const stageOrder = ['포착하기', '질문하기', '발전시키기', '기본기'];
-  const stages = stageOrder.map((stage) => {
-    const list = META.exercises.filter((e) => e.stage === stage);
-    return el('div', {},
-      el('h2', {}, stage),
-      el('div', { class: 'grid' }, list.map((ex) => el('button', {
-        class: 'card',
-        style: `text-align:left;cursor:pointer;font:inherit;color:inherit;${ex.id === pre ? 'border-color:var(--accent);outline:2px solid var(--accent-soft)' : ''}`,
-        onclick: () => go(`practice/${ex.id}`),
-      }, el('div', { class: 'spread' }, el('h3', {}, ex.title), el('span', { class: 'badge gray' }, `${ex.minutes}분`)),
-      el('p', { class: 'muted small' }, ex.summary)))));
-  });
-
+  const heading = r.compose.title.trim();
   return el('div', {},
-    el('h1', {}, '연습하기'),
-    el('p', { class: 'lead' }, '감상의 소재를 발견하고 붙잡아 두는 연습입니다. 처음 2주는 감상문을 완성하려 하지 않아도 됩니다.'),
-    el('div', { class: 'card' },
-      el('label', { class: 'field', style: 'margin-bottom:8px' }, el('span', {}, '어떤 작품으로 연습할까요?'), select),
-      el('div', { class: 'row' },
-        el('a', { class: 'btn small', href: `#/works/new${pre ? `?then=${pre}` : ''}` }, '+ 새 작품 등록'),
-        el('button', { class: 'btn small', onclick: () => go(`essay/new?target=${essayTarget || 300}`) }, `${essayTarget || ''}${essayTarget ? '자 ' : ''}감상문 쓰기`))),
-    stages);
-}
-
-// ---------- 남은 질문 ----------
-
-async function renderQuestions() {
-  const qs = await api('GET', '/api/questions');
-  return el('div', {},
-    el('h1', {}, '남은 질문'),
-    el('p', { class: 'lead' }, '결론을 내리지 않아도 됩니다. 공연이나 전시를 보고 생긴 의문을 기록하는 것만으로도 가치 있는 아카이빙이 됩니다.'),
-    qs.length
-      ? el('div', { class: 'card' }, el('ul', { class: 'list' }, qs.map((q) => el('li', {},
-        el('div', { class: 'preview' }, q.text),
-        el('div', { class: 'muted small' },
-          el('a', { href: `#/w/${q.workId}/note/${q.noteId}` }, q.workTitle), ` · ${q.exercise} · ${shortDate(q.createdAt)}`)))))
-      : el('div', { class: 'card muted' }, "'질문 다섯 개', \"'왜?' 세 번\", '5분 기록' 연습에서 적은 질문이 여기에 모입니다."));
-}
-
-// ---------- 가이드 ----------
-
-async function renderGuide() {
-  const r = META.resources;
-  const ex = (id) => exerciseById(id);
-  return el('div', {},
-    el('h1', {}, '가이드'),
-    el('p', { class: 'lead' }, '감상을 발견하는 훈련 → 구체적인 언어로 표현하는 훈련 → 짧은 글로 구성하는 훈련 순서를 추천합니다.'),
-
-    el('h2', {}, '세 단계'),
-    el('div', { class: 'grid' },
-      [['포착하기', '무엇이 남았나?', 'capture'], ['질문하기', '왜 남았나?', 'five-questions'], ['발전시키기', '무슨 생각이 드나?', 'why-three']].map(([s, q, id]) =>
-        el('a', { class: 'card', href: `#/practice?ex=${id}` }, el('span', { class: 'badge' }, s), el('h3', { style: 'margin-top:6px' }, q), el('p', { class: 'muted small' }, ex(id).summary)))),
-
-    el('h2', {}, '관찰 · 감정 · 해석'),
-    el('div', { class: 'card' },
-      el('table', {}, ex('oei').fields.map((f) => el('tr', {}, el('th', { style: 'width:220px' }, f.label), el('td', {}, ex('oei').example[f.key])))),
-      el('p', { class: 'muted small', style: 'margin-top:10px' }, '이렇게 세 문장만 적어도 하나의 작은 감상문이 만들어집니다.')),
-
-    el('h2', {}, '짧은 감상문의 순서'),
-    el('div', { class: 'card' },
-      el('table', {}, el('tr', {}, el('th', {}, '순서'), el('th', {}, '내용'), el('th', {}, '권장 분량')),
-        META.essaySections.map((s) => el('tr', {}, el('td', {}, s.label), el('td', {}, s.guide), el('td', {}, s.sentences)))),
-      el('p', { class: 'muted small', style: 'margin-top:10px' }, '이 구조로 200~400자 정도만 작성해도 충분합니다.'),
-      el('details', {}, el('summary', {}, '예시: 연극 〈갈매기〉 감상문'),
-        el('div', { class: 'preview', style: 'margin-top:8px' },
-          '공연이 끝나고 가장 오래 남은 것은 니나가 떠난 뒤의 적막이었다.\n\n' +
-          '트레플레프와 니나의 마지막 대화에서 니나는 고통스러운 삶을 이야기하면서도 여전히 배우로 살아가겠다는 의지를 드러냈다. 그런데 나는 그 모습이 희망차기보다는 오히려 쓸쓸하게 느껴졌다.\n\n' +
-          '어쩌면 내가 생각하는 성장은 고통을 극복하는 일이었기 때문일 것이다. 하지만 니나는 고통이 사라지지 않더라도 자신의 삶을 계속 살아갈 수 있다는 것을 보여준 것 같았다.\n\n' +
-          '극장을 나서며 한 가지 질문이 남았다. 우리는 꼭 행복해져야만 자신의 삶을 잘 살아냈다고 말할 수 있을까?'))),
-
-    el('h2', {}, '일주일 루틴 (10분씩 세 번)'),
-    el('div', { class: 'card' },
-      el('table', {}, el('tr', {}, el('th', {}, '요일'), el('th', {}, '훈련'), el('th', {}, '목표')),
-        META.weeklyRoutine.map((w) => el('tr', {}, el('td', {}, w.label), el('td', {}, el('a', { href: `#/practice?ex=${w.exercise}` }, ex(w.exercise).title)), el('td', {}, w.goal)))),
-      el('p', { class: 'muted small', style: 'margin-top:10px' }, '3주 차부터는 모아둔 기록 중 가장 흥미로운 질문을 골라 200~300자 글을 써보세요.')),
-
-    el('h2', {}, '훈련이 잘 되고 있는지 확인하기'),
-    el('div', { class: 'card' }, el('ul', { class: 'list' }, META.selfChecks.map((c) => el('li', {}, el('strong', {}, c.label), ` — ${c.question}`)))),
-    el('p', { class: 'muted small', style: 'margin-top:10px' }, '감상은 반드시 긍정적일 필요가 없습니다. 지루하거나 불쾌했던 이유를 탐구하면 나만의 취향과 관점이 더 분명해집니다.'),
-
-    el('h2', {}, '추천 도서'),
-    el('div', { class: 'grid' }, r.BOOKS.map((b) => el('div', { class: 'card' },
-      b.badge ? el('span', { class: 'badge' }, b.badge) : el('span', { class: 'badge gray' }, `${b.order}번째`),
-      el('h3', { style: 'margin-top:6px' }, b.title),
-      el('div', { class: 'muted small' }, `${b.author} · ${b.publisher}`),
-      el('p', { class: 'small', style: 'margin-top:6px' }, b.note)))),
-
-    el('h2', {}, '영상과 무료 자료'),
-    el('div', { class: 'grid' }, r.MEDIA.map((m) => el('a', { class: 'card', href: m.url, target: '_blank', rel: 'noopener' },
-      el('h3', {}, m.title),
-      el('div', { class: 'muted small' }, m.by),
-      el('p', { class: 'small', style: 'margin-top:6px' }, m.note)))));
+    el('div', { class: 'wrap' },
+      el('header', { class: 'topbar' },
+        el('a', { class: 'icon-btn outlined', href: '#/', 'aria-label': '목록으로' }, icon('back')),
+        el('div', { class: 'header-actions' },
+          el('a', { class: 'pill-btn', href: `#/r/${id}/compose` }, '수정'),
+          el('a', { class: 'pill-btn', href: `/api/reviews/${id}/export.md`, download: '' }, '내보내기'),
+          el('button', { type: 'button', class: 'pill-btn danger', onclick: remove }, '삭제')))),
+    el('article', { class: 'reading' },
+      el('div', { class: 'detail-meta' },
+        el('span', { class: 'badge' }, cat.shortLabel || cat.label),
+        el('span', { class: 'meta-text' }, [dotted(r.date), r.venue].filter(Boolean).join(' · ')),
+        r.status === 'draft' ? el('a', { class: 'meta-text', style: 'color:var(--accent);font-weight:600', href: `#/r/${id}/${r.stage}` }, '작성 중 · 이어 쓰기') : null),
+      heading ? el('p', { class: 'detail-work' }, r.title) : null,
+      el('h1', { class: 'detail-title' }, heading || r.title),
+      paragraphs.length
+        ? el('div', { class: 'detail-body' }, paragraphs.map((p) => el('p', {}, p)))
+        : el('p', { class: 'notice' }, '아직 정리된 글이 없어요. ', el('a', { href: `#/r/${id}/compose` }, '정리하기'), '에서 한 편으로 이어 보세요.'),
+      r.question.remaining.trim()
+        ? el('section', { class: 'remaining' }, el('h2', {}, '남은 질문'), el('p', {}, r.question.remaining.trim()))
+        : null,
+      sources.length
+        ? el('details', { class: 'source' },
+          el('summary', {}, `이 감상의 재료 보기 · 포착 ${captureCount} · 질문 ${sources.length - captureCount}`),
+          el('ul', {}, sources.map((s) => el('li', {}, el('small', {}, s.from), s.text))))
+        : null));
 }
 
 // ---------- 시작 ----------
@@ -857,5 +571,5 @@ api('GET', '/api/meta').then((meta) => {
   META = meta;
   route();
 }).catch((err) => {
-  $app.replaceChildren(el('p', {}, `서버에 연결할 수 없습니다: ${err.message}`));
+  $app.replaceChildren(el('p', { class: 'narrow' }, `서버에 연결할 수 없습니다: ${err.message}`));
 });
